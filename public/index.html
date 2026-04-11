@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GuardLine Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>GuardLine Dashboard</h1>
+      <div class="refresh-indicator">
+        <span id="refresh-status">Loading...</span>
+      </div>
+    </header>
+
+    <section class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-label">Total Calls</div>
+        <div class="stat-value" id="stat-total">0</div>
+      </div>
+      <div class="stat-card stat-blocked">
+        <div class="stat-label">Blocked</div>
+        <div class="stat-value" id="stat-blocked">0</div>
+      </div>
+      <div class="stat-card stat-forwarded">
+        <div class="stat-label">Forwarded</div>
+        <div class="stat-value" id="stat-forwarded">0</div>
+      </div>
+      <div class="stat-card stat-held">
+        <div class="stat-label">Held</div>
+        <div class="stat-value" id="stat-held">0</div>
+      </div>
+      <div class="stat-card stat-whitelisted">
+        <div class="stat-label">Whitelisted</div>
+        <div class="stat-value" id="stat-whitelisted">0</div>
+      </div>
+    </section>
+
+    <section class="calls-section">
+      <h2>Call Log</h2>
+      <div class="table-container">
+        <table class="calls-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Caller Number</th>
+              <th>Caller Name</th>
+              <th>Outcome</th>
+              <th>Trust Score</th>
+              <th>Reasoning</th>
+            </tr>
+          </thead>
+          <tbody id="calls-tbody">
+            <tr class="no-data">
+              <td colspan="6">No calls yet</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
