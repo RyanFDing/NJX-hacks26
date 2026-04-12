@@ -1,8 +1,8 @@
 # GuardLine
 
-An AI-powered phone screening system that intercepts incoming calls on behalf of a protected individual, conducts a real-time voice conversation to assess the caller's identity and intent, and either forwards the call or blocks it — with a push notification to the recipient either way.
+Our AI-powered phone screening framework that protects individuals from incoming dangerous scam calls, conducts real-time voice analysis to assess caller identity and malice, and forwards safe calls while blocking scam calls — with a push notification to the recipient either way.
 
-Built for people who are frequently targeted by phone scams: elderly adults, people with public phone numbers, or anyone who needs a first line of defense before a call reaches them.
+Built for the vulnerable who are frequently targeted by phone scams: elderly adults, people with public phone numbers, or others who need a protective layer of defense against AI scam calls.
 
 ---
 
