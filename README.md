@@ -12,7 +12,7 @@ When someone calls the protected Twilio number:
 
 1. **Whitelist check** — if the caller's number is whitelisted, the call is forwarded immediately with no screening.
 2. **AI receptionist** — otherwise, an OpenAI Realtime API voice agent answers the call. It greets the caller, asks who they're trying to reach, collects their name, and asks the reason for the call, all in natural speech.
-3. **Screener** — once the receptionist has enough information, it hands off to a GPT-4o-mini screening pass that analyzes the transcript for scam patterns, identity consistency, and manipulation tactics. The screener can ask follow-up questions (up to 5 rounds) through the receptionist before making a decision.
+3. **Screener** — once the receptionist has enough information, it connects to a GPT-4o-mini screening model that analyzes the call content for scam risks, identity verification, and manipulative wording. The screener can ask follow-up questions (up to 5 rounds) through the receptionist before making a decision based on a probability threshold.
 4. **Decision** — one of four outcomes:
    - **Approved** — legitimate call, forwarded to the recipient's real number.
    - **Blocked** — scam detected, caller is told why and the call is terminated.
@@ -20,7 +20,7 @@ When someone calls the protected Twilio number:
    - **Whitelisted** — bypassed before screening.
 5. **Alerts** — a push notification is sent to the recipient's phone via [ntfy.sh](https://ntfy.sh) for every outcome except whitelisted, with the risk reasoning and trust score.
 
-All calls are logged to a local SQLite database and viewable in the web dashboard.
+All calls are logged to a local SQLite database and shown in real-time in the web dashboard.
 
 ---
 
