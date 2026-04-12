@@ -9,9 +9,9 @@ import { sendAlert } from './alerts.js';
 import type { CallRecord, ScreeningDecision } from './types.js';
 import Twilio from 'twilio';
 
-const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17';
+const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview';
 const OPENAI_VOICE = 'shimmer';
-
+const MAX_SCREENING_ROUNDS = 5;
 const activeSessions = new Map<string, VoiceSession>();
 
 export function setupWebSocketServer(server: Server, db: Database.Database, config: Config): void {
@@ -55,11 +55,21 @@ export function setupWebSocketServer(server: Server, db: Database.Database, conf
                 input_audio_format: 'g711_ulaw',
                 output_audio_format: 'g711_ulaw',
                 input_audio_transcription: { model: 'whisper-1' },
-                turn_detection: { type: 'server_vad' },
+                turn_detection: {
+                  type: 'server_vad',
+                  threshold: 0.5,
+                  silence_duration_ms: 800,
+                },
                 instructions: buildSystemPrompt(config.recipientName),
               },
             }));
+
+            // Make the bot speak first — don't wait for caller input
+            setTimeout(() => {
+              openaiWs!.send(JSON.stringify({ type: 'response.create' }));
+            }, 500);
           });
+
 
           // Wire up the screening callback
           session.onScreeningComplete = () => {
@@ -130,18 +140,20 @@ async function runScreeningLoop(
   config: Config,
 ): Promise<void> {
   session.incrementIteration();
-  console.log(`[${session.callSid}] Screening iteration ${session.screeningIteration}`);
+  console.log(`[${session.callSid}] Screening iteration ${session.screeningIteration}/${MAX_SCREENING_ROUNDS}`);
+  console.log(`[${session.callSid}] Transcript so far:`, session.transcript.map(t => `${t.role}: ${t.text}`).join(' | '));
 
   let decision: ScreeningDecision;
   try {
     decision = await screenCall(
       session.transcript,
       session.callerNumber,
-      config.anthropicApiKey,
+      config.openaiApiKey,
       config.recipientName,
       session.screeningIteration,
     );
-  } catch {
+  } catch (err) {
+    console.error(`[${session.callSid}] Screening error:`, err);
     decision = {
       action: 'hold_for_review',
       confidence: 0.5,
@@ -152,14 +164,20 @@ async function runScreeningLoop(
   }
 
   console.log(`[${session.callSid}] Decision: ${decision.action} (confidence: ${decision.confidence})`);
+  console.log(`[${session.callSid}] Reasoning: ${decision.reasoning}`);
+  if (decision.red_flags?.length) {
+    console.log(`[${session.callSid}] Red flags: ${decision.red_flags.join(', ')}`);
+  }
 
   switch (decision.action) {
     case 'approve': {
       session.setState('completed');
       logCallFromDecision(session, decision, 'forwarded', db);
-      // Forward the call via Twilio REST API
-      await forwardCallViaTwilio(session.callSid, config);
-      activeSessions.delete(streamSid);
+      injectMessage(openaiWs, "Great news — I'm connecting you now. One moment please.");
+      setTimeout(() => {
+        forwardCallViaTwilio(session.callSid, config);
+        activeSessions.delete(streamSid);
+      }, 3000);
       break;
     }
 
@@ -167,9 +185,7 @@ async function runScreeningLoop(
       session.setState('completed');
       const blockedRecord = logCallFromDecision(session, decision, 'blocked', db);
       fireAlert(blockedRecord, config);
-      // Tell the caller goodbye via OpenAI
       injectMessage(openaiWs, "I'm sorry, I'm not able to connect you at this time. Goodbye.");
-      // Close after a short delay to let the message play
       setTimeout(() => {
         endCall(session.callSid, config);
         activeSessions.delete(streamSid);
@@ -190,23 +206,22 @@ async function runScreeningLoop(
     }
 
     case 'ask_followup': {
-      if (session.maxIterationsReached()) {
-        // Force hold after max iterations
+      if (session.screeningIteration >= MAX_SCREENING_ROUNDS) {
         session.setState('completed');
-        const maxIterRecord = logCallFromDecision(session, { ...decision, action: 'hold_for_review' }, 'held', db);
-        fireAlert(maxIterRecord, config);
+        const maxRecord = logCallFromDecision(session, { ...decision, action: 'hold_for_review' }, 'held', db);
+        fireAlert(maxRecord, config);
         injectMessage(openaiWs, "Thank you for your patience. I'll have them call you back. Have a good day.");
         setTimeout(() => {
           endCall(session.callSid, config);
           activeSessions.delete(streamSid);
         }, 5000);
       } else {
-        // Ask the follow-up question via OpenAI
         session.setState('follow_up');
-        injectMessage(openaiWs, decision.next_question || "Could you tell me a bit more about your reason for calling?");
-        // The screening will re-trigger when the AI finishes this follow-up turn
-        // and looksLikeScreeningComplete detects the next "one moment" phrase
-        // We set up a listener for the caller's response to the follow-up
+        const question = decision.next_question || "Could you tell me a bit more about your reason for calling?";
+        console.log(`[${session.callSid}] Follow-up question: ${question}`);
+        injectMessage(openaiWs, question);
+
+        // Wait for the caller to respond, then loop back
         session.onScreeningComplete = () => {
           runScreeningLoop(session, openaiWs, twilioWs, streamSid, db, config);
         };
@@ -215,6 +230,7 @@ async function runScreeningLoop(
     }
   }
 }
+
 
 function injectMessage(openaiWs: WebSocket, text: string): void {
   if (openaiWs.readyState !== WebSocket.OPEN) return;
@@ -229,6 +245,9 @@ function injectMessage(openaiWs: WebSocket, text: string): void {
   }));
   openaiWs.send(JSON.stringify({ type: 'response.create' }));
 }
+
+
+
 
 function logCallFromDecision(
   session: VoiceSession,
@@ -351,11 +370,26 @@ function handleOpenAIEvent(
       break;
     }
 
-    case 'response.done': {
+        case 'response.done': {
       const lastEntry = session.transcript[session.transcript.length - 1];
       if (
-        session.state !== 'completed' &&
-        session.state !== 'analyzing' &&
+        session.state === 'completed' ||
+        session.state === 'analyzing'
+      ) break;
+
+      // After initial screening (bot said "one moment") OR after a follow-up
+      // where the caller has responded
+      if (session.state === 'follow_up') {
+        // Check if the last entry was from the caller (they answered the follow-up)
+        const callerResponded = session.transcript.some((entry, i) => {
+          if (i < session.transcript.length - 2) return false;
+          return entry.role === 'caller';
+        });
+        if (callerResponded) {
+          session.setState('analyzing');
+          session.onScreeningComplete?.();
+        }
+      } else if (
         lastEntry?.role === 'receptionist' &&
         looksLikeScreeningComplete(lastEntry.text)
       ) {
@@ -364,6 +398,7 @@ function handleOpenAIEvent(
       }
       break;
     }
+
 
     case 'error': {
       console.error(`[${session.callSid}] OpenAI error:`, event.error);
