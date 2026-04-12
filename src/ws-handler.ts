@@ -9,7 +9,7 @@ import { sendAlert } from './alerts.js';
 import type { CallRecord, ScreeningDecision } from './types.js';
 import Twilio from 'twilio';
 
-const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime?model=gpt-realtime';
+const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17';
 const OPENAI_VOICE = 'shimmer';
 
 const activeSessions = new Map<string, VoiceSession>();
@@ -37,7 +37,9 @@ export function setupWebSocketServer(server: Server, db: Database.Database, conf
             streamSid,
           });
           activeSessions.set(streamSid, session);
+	console.log('[DEBUG] OpenAI key starts with:', config.openaiApiKey.substring(0, 10));
 
+          console.log("[DEBUG] OpenAI key starts with:", config.openaiApiKey.substring(0, 10));
           openaiWs = new WebSocket(OPENAI_REALTIME_URL, {
             headers: {
               'Authorization': `Bearer ${config.openaiApiKey}`,

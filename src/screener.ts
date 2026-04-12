@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import type { TranscriptEntry, ScreeningDecision } from './types.js';
 
 const HOLD_DEFAULT: ScreeningDecision = {
@@ -15,7 +15,7 @@ export function buildScreeningPrompt(recipientName: string): string {
 You will receive a transcript of a phone conversation between an AI receptionist and an incoming caller. Your job is to assess whether this call is legitimate or a potential scam.
 
 ANALYZE FOR:
-1. **Identity verification**: Did the caller know the recipient's name? If not, this is an automatic reject.
+1. **Identity verification**: Did the caller know the recipient's name (${recipientName})? Accept phonetically similar variations or close mispronunciations (e.g., "Henry" matching "Hendry", "Henri" or "Henery", "Margaret" matching "Margret"). Speech-to-text often mishears names. If the caller is clearly attempting the correct name, treat it as a pass. Only reject if the name is completely wrong or they cannot provide one at all.
 2. **Relationship plausibility**: Does their claimed relationship make sense? Are there inconsistencies?
 3. **Purpose legitimacy**: Is their stated reason for calling typical and reasonable?
 4. **Scam pattern matching**: Check against known patterns:
@@ -55,7 +55,7 @@ RESPOND WITH ONLY THIS JSON (no markdown, no backticks, no preamble):
 }`;
 }
 
-function formatTranscriptForClaude(transcript: TranscriptEntry[], callerNumber: string, iteration: number): string {
+function formatTranscript(transcript: TranscriptEntry[], callerNumber: string, iteration: number): string {
   const lines = transcript.map(e =>
     `[${e.role === 'caller' ? 'CALLER' : 'RECEPTIONIST'}]: ${e.text}`
   ).join('\n');
@@ -88,29 +88,32 @@ function parseDecision(text: string, iteration: number): ScreeningDecision {
 export async function screenCall(
   transcript: TranscriptEntry[],
   callerNumber: string,
-  anthropicApiKey: string,
+  openaiApiKey: string,
   recipientName: string,
   iteration: number,
 ): Promise<ScreeningDecision> {
-  const client = new Anthropic({ apiKey: anthropicApiKey });
+  const client = new OpenAI({ apiKey: openaiApiKey });
   const systemPrompt = buildScreeningPrompt(recipientName);
-  const userMessage = formatTranscriptForClaude(transcript, callerNumber, iteration);
+  const userMessage = formatTranscript(transcript, callerNumber, iteration);
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
         max_tokens: 512,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        temperature: 0.3,
       });
 
-      const text = response.content[0];
-      if (text.type !== 'text') {
+      const text = response.choices[0]?.message?.content;
+      if (!text) {
         return { ...HOLD_DEFAULT, iteration };
       }
 
-      return parseDecision(text.text, iteration);
+      return parseDecision(text, iteration);
     } catch (err) {
       if (attempt === 1) {
         console.error('Screener failed after retry:', err);
