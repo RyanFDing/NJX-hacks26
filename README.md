@@ -10,8 +10,8 @@ Built for the vulnerable who are frequently targeted by phone scams: elderly adu
 
 When someone calls the protected Twilio number:
 
-1. **Whitelist check** — if the caller's number is on the whitelist, the call is forwarded immediately with no screening.
-2. **AI receptionist** — otherwise, an OpenAI Realtime API voice agent answers the call. It greets the caller, asks who they're trying to reach, collects their name, and asks the reason for the call — all in natural speech.
+1. **Whitelist check** — if the caller's number is whitelisted, the call is forwarded immediately with no screening.
+2. **AI receptionist** — otherwise, an OpenAI Realtime API voice agent answers the call. It greets the caller, asks who they're trying to reach, collects their name, and asks the reason for the call, all in natural speech.
 3. **Screener** — once the receptionist has enough information, it hands off to a GPT-4o-mini screening pass that analyzes the transcript for scam patterns, identity consistency, and manipulation tactics. The screener can ask follow-up questions (up to 5 rounds) through the receptionist before making a decision.
 4. **Decision** — one of four outcomes:
    - **Approved** — legitimate call, forwarded to the recipient's real number.
