@@ -10,9 +10,8 @@ describe('config', () => {
     process.env.TWILIO_AUTH_TOKEN = 'test_auth_token';
     process.env.TWILIO_PHONE_NUMBER = '+15551234567';
     process.env.RECIPIENT_PHONE_NUMBER = '+15559876543';
-    process.env.EMERGENCY_CONTACT_PHONE = '+15551112222';
     process.env.OPENAI_API_KEY = 'sk-test-openai';
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+    process.env.NTFY_TOPIC = 'guardline-test';
     process.env.RECIPIENT_NAME = 'Margaret';
   });
 
@@ -27,9 +26,8 @@ describe('config', () => {
     expect(config.twilioAuthToken).toBe('test_auth_token');
     expect(config.twilioPhoneNumber).toBe('+15551234567');
     expect(config.recipientPhoneNumber).toBe('+15559876543');
-    expect(config.emergencyContactPhone).toBe('+15551112222');
     expect(config.openaiApiKey).toBe('sk-test-openai');
-    expect(config.anthropicApiKey).toBe('sk-ant-test');
+    expect(config.ntfyTopic).toBe('guardline-test');
     expect(config.recipientName).toBe('Margaret');
   });
 

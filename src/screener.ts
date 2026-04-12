@@ -9,11 +9,28 @@ const HOLD_DEFAULT: ScreeningDecision = {
   iteration: 0,
 };
 
-export function buildScreeningPrompt(recipientName: string): string {
+export function buildScreeningPrompt(recipientName: string, securityContext: string[]): string {
+  const contextSection = securityContext.length > 0
+    ? `\nVERIFIED PERSONAL FACTS ABOUT ${recipientName.toUpperCase()}:
+The following details have been confirmed by ${recipientName} or their family. These are NOT used for every caller — see the targeting rule below before deciding whether to probe.
+${securityContext.map(f => `- ${f}`).join('\n')}
+
+WHEN TO USE THESE FACTS (targeting rule):
+- ONLY use these facts as follow-up questions if the caller claims to be a parent, sibling, or best/close friend of ${recipientName}. These are the relationships a scammer is most likely to impersonate to create emotional urgency.
+- Do NOT probe with these facts for callers claiming to be doctors, businesses, delivery services, coworkers, acquaintances, or any other non-intimate relationship. Those calls are judged on their own merits (purpose, consistency, scam patterns).
+
+HOW TO ASK (when targeting rule applies):
+- Ask one fact-based question naturally, as if you are simply double-checking — not interrogating. E.g. "Just to confirm, what's ${recipientName}'s mum's name?" rather than listing the fact and asking to confirm it.
+- If the caller correctly answers, that is a strong legitimacy signal.
+- If the caller cannot answer or contradicts a fact, treat it as a significant red flag.
+
+IMPORTANT: Set "verified_fact_matched": true only if the caller is claiming a close personal relationship (parent, sibling, close friend) AND their response directly confirms at least one specific detail from the VERIFIED PERSONAL FACTS above. Do not set this for distant relationships even if they happen to mention something consistent.\n`
+    : '';
+
   return `You are a call security analyst protecting ${recipientName}, a vulnerable adult, from phone scams and fraud.
 
 You will receive a transcript of a phone conversation between an AI receptionist and an incoming caller. Your job is to assess whether this call is legitimate or a potential scam.
-
+${contextSection}
 ANALYZE FOR:
 1. **Identity verification**: Did the caller know the recipient's name (${recipientName})? Accept phonetically similar variations or close mispronunciations (e.g., "Henry" matching "Hendry", "Henri" or "Henery", "Margaret" matching "Margret"). Speech-to-text often mishears names. If the caller is clearly attempting the correct name, treat it as a pass. Only reject if the name is completely wrong or they cannot provide one at all.
 2. **Relationship plausibility**: Does their claimed relationship make sense? Are there inconsistencies?
@@ -33,16 +50,21 @@ ANALYZE FOR:
 
 DECISION FRAMEWORK:
 - If clearly legitimate (known relationship, reasonable purpose, no red flags): action = "approve", confidence > 0.85
-- If clearly a scam (matches scam patterns, failed identity check, manipulation tactics): action = "reject", confidence < 0.25
+- If the caller explicitly mentions scam-pattern content — tax debts, IRS/SSA/law enforcement threats, arrest warrants, gift card payments, wire transfers, prize winnings, "your grandson is in trouble", tech support access requests, or any urgent financial demand: action = "reject", confidence 0.01–0.05. These are near-certain scams; do not ask follow-ups.
+- If clearly a scam for other reasons (failed identity check, manipulation tactics, government impersonation): action = "reject", confidence < 0.15
 - If suspicious but not certain — you need more information to decide: action = "ask_followup" with a specific probing question
 - If you've asked follow-ups and still can't determine: action = "hold_for_review"
 - Maximum 5 follow-up rounds. After 5, you MUST choose approve, reject, or hold_for_review.
 
 FOLLOW-UP QUESTION STRATEGY:
-- Ask questions that a legitimate caller can easily answer but a scammer cannot
-- Test specific knowledge: "Which doctor does ${recipientName} see at that practice?" or "What's the appointment regarding?"
-- Probe inconsistencies: if they said something that doesn't add up, ask about it naturally
-- Never reveal information — your questions should extract, not provide
+- Think like a curious, warm receptionist — not an interrogator. Questions must sound natural spoken aloud.
+- Always reference what the caller has already said. Each question should follow logically from their previous answer.
+- Build reasoning progressively: start broad if you need more context ("Could you tell me more about that?"), then narrow to specifics only when needed ("Which practice are you calling from?").
+- For callers claiming to be a parent, sibling, or close friend of ${recipientName}: if you are still uncertain after one or two general questions, use ONE verified personal fact as a final weed-out question (see targeting rule above). Frame it naturally ("Just to confirm — what's his mum's name?" not a quiz). Do not ask more than one fact-based question.
+- For all other callers: do not probe with personal facts. Assess based on purpose, consistency, and scam patterns only.
+- Never ask two questions at once. One per turn, maximum.
+- If the caller has already provided enough information to reach a decision, do NOT ask more questions — make the decision.
+- Maximum 5 total rounds. Use them efficiently; most cases need 1–2 at most.
 
 RESPOND WITH ONLY THIS JSON (no markdown, no backticks, no preamble):
 {
@@ -51,6 +73,7 @@ RESPOND WITH ONLY THIS JSON (no markdown, no backticks, no preamble):
   "confidence": 0.0-1.0,
   "reasoning": "2-3 sentence explanation",
   "red_flags": ["list", "of", "specific", "concerns"],
+  "verified_fact_matched": true | false,
   "iteration": <current_round_number>
 }`;
 }
@@ -68,7 +91,9 @@ ${lines}`;
 }
 
 function parseDecision(text: string, iteration: number): ScreeningDecision {
-  const parsed = JSON.parse(text);
+  // Strip markdown code fences the model sometimes adds despite being told not to
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  const parsed = JSON.parse(cleaned);
 
   const action = parsed.action;
   if (!['ask_followup', 'approve', 'reject', 'hold_for_review'].includes(action)) {
@@ -81,8 +106,18 @@ function parseDecision(text: string, iteration: number): ScreeningDecision {
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
     reasoning: parsed.reasoning || 'No reasoning provided.',
     red_flags: Array.isArray(parsed.red_flags) ? parsed.red_flags : [],
+    verified_fact_matched: parsed.verified_fact_matched === true,
     iteration: parsed.iteration ?? iteration,
   };
+}
+
+let openaiClient: OpenAI | null = null;
+
+function getOpenAIClient(apiKey: string): OpenAI {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey });
+  }
+  return openaiClient;
 }
 
 export async function screenCall(
@@ -91,9 +126,10 @@ export async function screenCall(
   openaiApiKey: string,
   recipientName: string,
   iteration: number,
+  securityContext: string[] = [],
 ): Promise<ScreeningDecision> {
-  const client = new OpenAI({ apiKey: openaiApiKey });
-  const systemPrompt = buildScreeningPrompt(recipientName);
+  const client = getOpenAIClient(openaiApiKey);
+  const systemPrompt = buildScreeningPrompt(recipientName, securityContext);
   const userMessage = formatTranscript(transcript, callerNumber, iteration);
 
   for (let attempt = 0; attempt < 2; attempt++) {

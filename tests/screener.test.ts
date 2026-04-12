@@ -177,21 +177,33 @@ describe('screener', () => {
 
 describe('buildScreeningPrompt', () => {
   it('includes recipient name', () => {
-    const prompt = buildScreeningPrompt('Margaret');
+    const prompt = buildScreeningPrompt('Margaret', []);
     expect(prompt).toContain('Margaret');
   });
 
   it('includes scam pattern categories', () => {
-    const prompt = buildScreeningPrompt('Margaret');
+    const prompt = buildScreeningPrompt('Margaret', []);
     expect(prompt).toContain('Government impersonation');
     expect(prompt).toContain('Grandparent scam');
     expect(prompt).toContain('Tech support');
   });
 
   it('includes the JSON response format', () => {
-    const prompt = buildScreeningPrompt('Margaret');
+    const prompt = buildScreeningPrompt('Margaret', []);
     expect(prompt).toContain('"action"');
     expect(prompt).toContain('"confidence"');
     expect(prompt).toContain('"red_flags"');
+  });
+
+  it('includes security context facts when provided', () => {
+    const prompt = buildScreeningPrompt('Margaret', ['My doctor is Dr. Smith', 'My daughter is Sarah']);
+    expect(prompt).toContain('Dr. Smith');
+    expect(prompt).toContain('Sarah');
+    expect(prompt).toContain('VERIFIED FACTS');
+  });
+
+  it('omits security context section when no facts provided', () => {
+    const prompt = buildScreeningPrompt('Margaret', []);
+    expect(prompt).not.toContain('VERIFIED FACTS');
   });
 });

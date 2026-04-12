@@ -32,4 +32,5 @@ export interface ScreeningDecision {
   reasoning: string;
   red_flags: string[];
   iteration: number;
+  verified_fact_matched?: boolean;
 }

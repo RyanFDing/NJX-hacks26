@@ -1,16 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { sendAlert, formatAlertMessage } from '../src/alerts.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { sendAlert } from '../src/alerts.js';
 import type { CallRecord } from '../src/types.js';
 
-// Mock the Twilio SDK
-const mockCreate = vi.fn();
-vi.mock('twilio', () => {
-  return {
-    default: () => ({
-      messages: { create: mockCreate },
-    }),
-  };
-});
+const mockFetch = vi.fn();
+vi.stubGlobal('fetch', mockFetch);
 
 function makeCallRecord(overrides: Partial<CallRecord> = {}): CallRecord {
   return {
@@ -29,180 +22,81 @@ function makeCallRecord(overrides: Partial<CallRecord> = {}): CallRecord {
   };
 }
 
+const baseConfig = { ntfyTopic: 'guardline-test', recipientName: 'Margaret' };
+
 describe('alerts', () => {
   beforeEach(() => {
-    mockCreate.mockReset();
-    mockCreate.mockResolvedValue({ sid: 'SM-mock-sid' });
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue({ ok: true, text: async () => '' });
   });
 
-  it('sends SMS when a call is blocked', async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('sends ntfy notification when a call is blocked', async () => {
     const record = makeCallRecord({ outcome: 'blocked', confidence_score: 0.1 });
+    await sendAlert(record, baseConfig);
 
-    await sendAlert(record, {
-      twilioAccountSid: 'AC-test',
-      twilioAuthToken: 'auth-test',
-      twilioPhoneNumber: '+15550001111',
-      emergencyContactPhone: '+15559998888',
-      recipientName: 'Margaret',
-    });
-
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.to).toBe('+15559998888');
-    expect(callArgs.from).toBe('+15550001111');
-    expect(callArgs.body).toContain('BLOCKED');
-    expect(callArgs.body).toContain('+15551234567');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toContain('ntfy.sh/guardline-test');
+    expect(opts.headers['Title']).toContain('BLOCKED');
+    expect(opts.headers['Priority']).toBe('urgent');
+    expect(opts.body).toContain('+15551234567');
   });
 
-  it('sends SMS when a call is held for review', async () => {
-    const record = makeCallRecord({
-      outcome: 'held',
-      confidence_score: 0.5,
-      risk_reasoning: 'Uncertain caller — held for manual review.',
-    });
+  it('sends ntfy notification when a call is held for review', async () => {
+    const record = makeCallRecord({ outcome: 'held', confidence_score: 0.5 });
+    await sendAlert(record, baseConfig);
 
-    await sendAlert(record, {
-      twilioAccountSid: 'AC-test',
-      twilioAuthToken: 'auth-test',
-      twilioPhoneNumber: '+15550001111',
-      emergencyContactPhone: '+15559998888',
-      recipientName: 'Margaret',
-    });
-
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.body).toContain('HELD FOR REVIEW');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(opts.headers['Title']).toContain('Suspicious');
+    expect(opts.headers['Title']).toContain('Margaret');
+    expect(opts.headers['Priority']).toBe('high');
   });
 
-  it('does NOT send SMS for approved calls', async () => {
+  it('sends a low-priority ntfy notification for cleared (forwarded) calls', async () => {
     const record = makeCallRecord({ outcome: 'forwarded', confidence_score: 0.95 });
+    await sendAlert(record, baseConfig);
 
-    await sendAlert(record, {
-      twilioAccountSid: 'AC-test',
-      twilioAuthToken: 'auth-test',
-      twilioPhoneNumber: '+15550001111',
-      emergencyContactPhone: '+15559998888',
-      recipientName: 'Margaret',
-    });
-
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(opts.headers['Title']).toContain('Cleared');
+    expect(opts.headers['Priority']).toBe('default');
   });
 
-  it('does NOT send SMS for whitelisted calls', async () => {
+  it('does NOT send notification for whitelisted calls', async () => {
     const record = makeCallRecord({ outcome: 'whitelisted', confidence_score: 1.0 });
-
-    await sendAlert(record, {
-      twilioAccountSid: 'AC-test',
-      twilioAuthToken: 'auth-test',
-      twilioPhoneNumber: '+15550001111',
-      emergencyContactPhone: '+15559998888',
-      recipientName: 'Margaret',
-    });
-
-    expect(mockCreate).not.toHaveBeenCalled();
+    await sendAlert(record, baseConfig);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('includes risk reasoning in SMS body', async () => {
-    const record = makeCallRecord({
-      outcome: 'blocked',
-      risk_reasoning: 'Caller impersonated IRS agent with threats.',
-    });
-
-    await sendAlert(record, {
-      twilioAccountSid: 'AC-test',
-      twilioAuthToken: 'auth-test',
-      twilioPhoneNumber: '+15550001111',
-      emergencyContactPhone: '+15559998888',
-      recipientName: 'Margaret',
-    });
-
-    const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.body).toContain('Caller impersonated IRS agent with threats.');
+  it('includes risk reasoning in body', async () => {
+    const record = makeCallRecord({ outcome: 'blocked', risk_reasoning: 'Caller impersonated IRS agent.' });
+    await sendAlert(record, baseConfig);
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(opts.body).toContain('Caller impersonated IRS agent.');
   });
 
-  it('includes confidence score in SMS body', async () => {
+  it('includes confidence score in body', async () => {
     const record = makeCallRecord({ outcome: 'blocked', confidence_score: 0.15 });
-
-    await sendAlert(record, {
-      twilioAccountSid: 'AC-test',
-      twilioAuthToken: 'auth-test',
-      twilioPhoneNumber: '+15550001111',
-      emergencyContactPhone: '+15559998888',
-      recipientName: 'Margaret',
-    });
-
-    const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.body).toContain('15%');
+    await sendAlert(record, baseConfig);
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(opts.body).toContain('15%');
   });
 
-  it('does not throw on Twilio API failure', async () => {
-    mockCreate.mockRejectedValueOnce(new Error('Twilio API down'));
-    const record = makeCallRecord({ outcome: 'blocked' });
-
-    // Should not throw
-    await expect(
-      sendAlert(record, {
-        twilioAccountSid: 'AC-test',
-        twilioAuthToken: 'auth-test',
-        twilioPhoneNumber: '+15550001111',
-        emergencyContactPhone: '+15559998888',
-        recipientName: 'Margaret',
-      })
-    ).resolves.not.toThrow();
-  });
-
-  it('includes recipient name in SMS body', async () => {
+  it('includes recipient name in title', async () => {
     const record = makeCallRecord({ outcome: 'held' });
-
-    await sendAlert(record, {
-      twilioAccountSid: 'AC-test',
-      twilioAuthToken: 'auth-test',
-      twilioPhoneNumber: '+15550001111',
-      emergencyContactPhone: '+15559998888',
-      recipientName: 'Margaret',
-    });
-
-    const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.body).toContain('Margaret');
-  });
-});
-
-describe('formatAlertMessage', () => {
-  it('formats blocked call message correctly', () => {
-    const record = makeCallRecord({
-      outcome: 'blocked',
-      caller_number: '+15551234567',
-      confidence_score: 0.1,
-      risk_reasoning: 'IRS impersonation scam detected.',
-    });
-
-    const msg = formatAlertMessage(record, 'Margaret');
-    expect(msg).toContain('BLOCKED');
-    expect(msg).toContain('+15551234567');
-    expect(msg).toContain('10%');
-    expect(msg).toContain('IRS impersonation scam detected.');
-    expect(msg).toContain('Margaret');
+    await sendAlert(record, baseConfig);
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(opts.headers['Title']).toContain('Margaret');
   });
 
-  it('formats held call message correctly', () => {
-    const record = makeCallRecord({
-      outcome: 'held',
-      confidence_score: 0.5,
-      risk_reasoning: 'Uncertain — needs human review.',
-    });
-
-    const msg = formatAlertMessage(record, 'Margaret');
-    expect(msg).toContain('HELD FOR REVIEW');
-    expect(msg).toContain('50%');
-  });
-
-  it('handles null confidence score', () => {
-    const record = makeCallRecord({
-      outcome: 'blocked',
-      confidence_score: null,
-    });
-
-    const msg = formatAlertMessage(record, 'Margaret');
-    expect(msg).toContain('N/A');
+  it('does not throw on fetch failure', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('network error'));
+    const record = makeCallRecord({ outcome: 'blocked' });
+    await expect(sendAlert(record, baseConfig)).resolves.not.toThrow();
   });
 });

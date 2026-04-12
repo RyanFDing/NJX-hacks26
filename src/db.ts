@@ -26,6 +26,33 @@ export function initDb(db: Database.Database): void {
       relationship TEXT
     )
   `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS security_context (
+      id TEXT PRIMARY KEY,
+      fact TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+}
+
+export interface SecurityFact {
+  id: string;
+  fact: string;
+  created_at: string;
+}
+
+export function getSecurityContext(db: Database.Database): SecurityFact[] {
+  return db.prepare('SELECT * FROM security_context ORDER BY created_at ASC').all() as SecurityFact[];
+}
+
+export function addSecurityFact(db: Database.Database, entry: SecurityFact): void {
+  db.prepare('INSERT INTO security_context (id, fact, created_at) VALUES (@id, @fact, @created_at)').run(entry);
+}
+
+export function removeSecurityFact(db: Database.Database, id: string): boolean {
+  const result = db.prepare('DELETE FROM security_context WHERE id = ?').run(id);
+  return result.changes > 0;
 }
 
 export function logCall(db: Database.Database, call: CallRecord): void {

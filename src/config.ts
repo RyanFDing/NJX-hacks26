@@ -10,9 +10,8 @@ export interface Config {
   twilioAuthToken: string;
   twilioPhoneNumber: string;
   recipientPhoneNumber: string;
-  emergencyContactPhone: string;
   openaiApiKey: string;
-  anthropicApiKey: string;
+  ntfyTopic: string;
   recipientName: string;
   whitelistNumbers: string[];
   port: number;
@@ -23,9 +22,8 @@ const REQUIRED_VARS = [
   'TWILIO_AUTH_TOKEN',
   'TWILIO_PHONE_NUMBER',
   'RECIPIENT_PHONE_NUMBER',
-  'EMERGENCY_CONTACT_PHONE',
   'OPENAI_API_KEY',
-  'ANTHROPIC_API_KEY',
+  'NTFY_TOPIC',
   'RECIPIENT_NAME',
 ] as const;
 
@@ -43,9 +41,8 @@ export function loadConfig(): Config {
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN!,
     twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER!,
     recipientPhoneNumber: process.env.RECIPIENT_PHONE_NUMBER!,
-    emergencyContactPhone: process.env.EMERGENCY_CONTACT_PHONE!,
     openaiApiKey: process.env.OPENAI_API_KEY!,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+    ntfyTopic: process.env.NTFY_TOPIC!,
     recipientName: process.env.RECIPIENT_NAME!,
     whitelistNumbers: whitelistRaw ? whitelistRaw.split(',').map(n => n.trim()) : [],
     port: parseInt(process.env.PORT || '3000', 10),

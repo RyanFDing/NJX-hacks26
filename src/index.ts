@@ -25,7 +25,7 @@ export function createApp(db?: Database.Database, config?: Config): Express {
   if (db && config) {
     app.post('/voice/incoming', (req, res) => handleIncomingCall(req, res, db, config));
     app.post('/voice/status', (req, res) => handleCallStatus(req, res));
-    app.use('/api', createApiRouter(db));
+    app.use('/api', createApiRouter(db, config));
   }
 
   return app;
@@ -76,7 +76,7 @@ async function main() {
     console.log(`💚 Health Check:     http://localhost:${config.port}/health`);
     console.log(`\n👤 Protected User:   ${config.recipientName}`);
     console.log(`📱 User Phone:       ${config.recipientPhoneNumber}`);
-    console.log(`🚨 Emergency:        ${config.emergencyContactPhone}`);
+    console.log(`🔔 Alerts topic:     ntfy.sh/${config.ntfyTopic}`);
     console.log(`\n✅ Server ready! Press Ctrl+C to stop.\n`);
   });
 }

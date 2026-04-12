@@ -12,9 +12,8 @@ function makeConfig() {
     twilioPhoneNumber: '+15550001111',
     recipientPhoneNumber: '+15559990000',
     recipientName: 'Margaret',
-    emergencyContactPhone: '+15559998888',
     openaiApiKey: 'sk-test',
-    anthropicApiKey: 'ant-test',
+    ntfyTopic: 'guardline-test',
     whitelistNumbers: [],
     port: 3000,
   };
