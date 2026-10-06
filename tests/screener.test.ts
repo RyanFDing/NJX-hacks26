@@ -2,19 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screenCall, buildScreeningPrompt } from '../src/screener.js';
 import type { TranscriptEntry, ScreeningDecision } from '../src/types.js';
 
-// Mock the Anthropic SDK
-vi.mock('@anthropic-ai/sdk', () => {
+// Keep screening tests offline while exercising the OpenAI response contract.
+vi.mock('openai', () => {
   const mockCreate = vi.fn();
   return {
     default: class {
-      messages = { create: mockCreate };
+      chat = { completions: { create: mockCreate } };
     },
     __mockCreate: mockCreate,
   };
 });
 
 async function getMockCreate() {
-  const mod = await import('@anthropic-ai/sdk') as any;
+  const mod = await import('openai') as any;
   return mod.__mockCreate as ReturnType<typeof vi.fn>;
 }
 
@@ -27,9 +27,9 @@ function makeTranscript(exchanges: [string, string][]): TranscriptEntry[] {
   return entries;
 }
 
-function mockClaudeResponse(decision: ScreeningDecision) {
+function mockOpenAIResponse(decision: ScreeningDecision) {
   return {
-    content: [{ type: 'text', text: JSON.stringify(decision) }],
+    choices: [{ message: { content: JSON.stringify(decision) } }],
   };
 }
 
@@ -49,7 +49,7 @@ describe('screener', () => {
       red_flags: ['Failed identity verification'],
       iteration: 1,
     };
-    mockCreate.mockResolvedValueOnce(mockClaudeResponse(decision));
+    mockCreate.mockResolvedValueOnce(mockOpenAIResponse(decision));
 
     const transcript = makeTranscript([
       ["Hi, you've reached this number. Who are you trying to reach?", "Uh, I'm not sure of the name."],
@@ -69,7 +69,7 @@ describe('screener', () => {
       red_flags: ['Government impersonation', 'Threats of arrest', 'Urgency tactics'],
       iteration: 1,
     };
-    mockCreate.mockResolvedValueOnce(mockClaudeResponse(decision));
+    mockCreate.mockResolvedValueOnce(mockOpenAIResponse(decision));
 
     const transcript = makeTranscript([
       ["Hi, you've reached this number. Who are you trying to reach?", "Margaret"],
@@ -92,7 +92,7 @@ describe('screener', () => {
       red_flags: [],
       iteration: 1,
     };
-    mockCreate.mockResolvedValueOnce(mockClaudeResponse(decision));
+    mockCreate.mockResolvedValueOnce(mockOpenAIResponse(decision));
 
     const transcript = makeTranscript([
       ["Hi, you've reached this number. Who are you trying to reach?", "Margaret"],
@@ -115,7 +115,7 @@ describe('screener', () => {
       red_flags: ['Vague details'],
       iteration: 1,
     };
-    mockCreate.mockResolvedValueOnce(mockClaudeResponse(decision));
+    mockCreate.mockResolvedValueOnce(mockOpenAIResponse(decision));
 
     const transcript = makeTranscript([
       ["Hi, you've reached this number. Who are you trying to reach?", "Margaret"],
@@ -131,8 +131,8 @@ describe('screener', () => {
   });
 
   it('defaults to hold_for_review on malformed API response', async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: 'text', text: 'This is not valid JSON at all' }],
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'This is not valid JSON at all' } }],
     });
 
     const transcript = makeTranscript([
@@ -164,7 +164,7 @@ describe('screener', () => {
       red_flags: [],
       iteration: 3,
     };
-    mockCreate.mockResolvedValueOnce(mockClaudeResponse(decision));
+    mockCreate.mockResolvedValueOnce(mockOpenAIResponse(decision));
 
     const transcript = makeTranscript([
       ["Who are you trying to reach?", "Margaret"],
@@ -199,11 +199,11 @@ describe('buildScreeningPrompt', () => {
     const prompt = buildScreeningPrompt('Margaret', ['My doctor is Dr. Smith', 'My daughter is Sarah']);
     expect(prompt).toContain('Dr. Smith');
     expect(prompt).toContain('Sarah');
-    expect(prompt).toContain('VERIFIED FACTS');
+    expect(prompt).toContain('VERIFIED PERSONAL FACTS');
   });
 
   it('omits security context section when no facts provided', () => {
     const prompt = buildScreeningPrompt('Margaret', []);
-    expect(prompt).not.toContain('VERIFIED FACTS');
+    expect(prompt).not.toContain('VERIFIED PERSONAL FACTS');
   });
 });

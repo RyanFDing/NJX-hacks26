@@ -80,14 +80,14 @@ describe('buildSystemPrompt', () => {
 
   it('includes the screening flow steps', () => {
     const prompt = buildSystemPrompt('Margaret');
-    expect(prompt).toContain('Who are you trying to reach');
-    expect(prompt).toContain('who am I speaking with');
-    expect(prompt).toContain('how do you know');
-    expect(prompt).toContain('What is this call regarding');
+    expect(prompt).toContain('Who were you trying to reach today?');
+    expect(prompt).toContain('who am I speaking with?');
+    expect(prompt).toContain('You do NOT decide whether to connect the call');
+    expect(prompt).toContain("What's this call about today?");
   });
 
   it('instructs short responses', () => {
     const prompt = buildSystemPrompt('Robert');
-    expect(prompt).toContain('1-2 sentences');
+    expect(prompt).toContain('1 to 2 sentences maximum');
   });
 });
